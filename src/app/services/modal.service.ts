@@ -9,7 +9,7 @@ interface IModal {
   providedIn: 'root',
 })
 export class ModalService {
-  private modals: Map<string, IModal> = new Map();
+  public modals: Map<string, IModal> = new Map();
 
   isModalOpen(id: string): boolean {
     return this.modals.get(id)?.visible ?? false;
