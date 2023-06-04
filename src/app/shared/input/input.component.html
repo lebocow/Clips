@@ -35,4 +35,10 @@
   >
     You must enter a valid age
   </p>
+  <p *ngIf="control.errors['noMatch']" class="text-red-400 text-sm">
+    Passwords do not match!
+  </p>
+  <p *ngIf="control.errors['emailTaken']" class="text-red-400 text-sm">
+    Email taken! Please try another email!
+  </p>
 </ng-container>

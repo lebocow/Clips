@@ -1,4 +1,4 @@
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import {
   Auth,
   User,
@@ -16,22 +16,45 @@ import {
   setDoc,
 } from '@angular/fire/firestore';
 import IUser from '../models/user.model';
-import { Observable } from 'rxjs';
-import { map, delay } from 'rxjs/operators';
+import { Observable, of } from 'rxjs';
+import { map, delay, filter, switchMap } from 'rxjs/operators';
+import { ActivatedRoute, Router, NavigationEnd } from '@angular/router';
+
+interface RouteData {
+  authOnly?: boolean;
+}
 
 @Injectable({
   providedIn: 'root',
 })
 export class AuthService {
-  public isAuthenticated$: Observable<boolean>;
+  private auth = inject(Auth);
+  private db = inject(Firestore);
+  private router = inject(Router);
+  private route = inject(ActivatedRoute);
+  private redirect = false;
+
   private usersRef = collection(this.db, 'users');
   private user$ = user(this.auth);
 
-  constructor(private auth: Auth, private db: Firestore) {
-    this.isAuthenticated$ = this.user$.pipe(
-      map((user) => !!user),
-      delay(1000)
-    );
+  public isAuthenticated$: Observable<boolean> = this.user$.pipe(
+    map((user) => !!user)
+  );
+  public isAuthenticatedwDelay$: Observable<boolean> = this.user$.pipe(
+    map((user) => !!user),
+    delay(3000)
+  );
+
+  constructor() {
+    this.router.events
+      .pipe(
+        filter((e) => e instanceof NavigationEnd),
+        map(() => this.route.firstChild),
+        switchMap((route) => route?.data ?? of({}))
+      )
+      .subscribe((data: RouteData) => {
+        this.redirect = data.authOnly ?? false;
+      });
   }
 
   public async createUser(userData: IUser): Promise<void> {
@@ -87,11 +110,19 @@ export class AuthService {
     }
   }
 
-  public async signOutUser(): Promise<void> {
+  public async logout($event: Event): Promise<void> {
+    $event && $event.preventDefault();
+
     try {
       await signOut(this.auth);
     } catch (error) {
       this.handleError('Error logging out user', error);
+    }
+
+    try {
+      this.redirect && (await this.router.navigateByUrl(''));
+    } catch (error) {
+      this.handleError('Error navigating to specified url', error);
     }
   }
 

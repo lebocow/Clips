@@ -2,6 +2,7 @@ import { Component, inject } from '@angular/core';
 import { ModalService } from '../services/modal.service';
 
 import { AuthService } from '../services/auth.service';
+import { Router } from '@angular/router';
 
 @Component({
   selector: 'app-nav',
@@ -10,9 +11,7 @@ import { AuthService } from '../services/auth.service';
 })
 export class NavComponent {
   public modal: ModalService = inject(ModalService);
-  public auth = inject(AuthService);
-
-  constructor() {}
+  public auth: AuthService = inject(AuthService);
 
   toggleModal($event: Event) {
     $event.preventDefault();
