@@ -15,7 +15,6 @@ export class ClipComponent implements OnInit {
   ngOnInit(): void {
     // this.id = this.route.snapshot.params['id'];
     this.route.params.subscribe((params: Params) => {
-      console.log(params);
       this.id = params['id'];
     });
   }
