@@ -26,7 +26,8 @@ export class ClipsService {
   private storage = inject(Storage);
 
   public clipsCollection = collection(this.db, 'clips');
-  public storageRef = ref(this.storage, 'clips');
+  public clipsStorageRef = ref(this.storage, 'clips');
+  public screenshotsStorageRef = ref(this.storage, 'screenshots');
 
   async createClip(data: IClip) {
     return addDoc(this.clipsCollection, data);
@@ -79,8 +80,14 @@ export class ClipsService {
 
   async deleteClip(clip: IClip) {
     try {
-      const clipStRef = ref(this.storageRef, clip.fileName);
+      const clipStRef = ref(this.clipsStorageRef, clip.fileName);
       await deleteObject(clipStRef);
+
+      const screenshotStRef = ref(
+        this.screenshotsStorageRef,
+        clip.screenshotFileName
+      );
+      await deleteObject(screenshotStRef);
 
       const clipDocRef = doc(this.clipsCollection, clip.docID);
       await deleteDoc(clipDocRef);

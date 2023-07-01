@@ -13,8 +13,17 @@ import {
 } from '@angular/fire/storage';
 import { FormControl, FormGroup, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
+import {
+  BehaviorSubject,
+  Observable,
+  combineLatest,
+  forkJoin,
+  map,
+  scan,
+} from 'rxjs';
 import IClip from 'src/app/models/clip.model';
 import { ClipsService } from 'src/app/services/clips.service';
+import { FfmpegService } from 'src/app/services/ffmpeg.service';
 
 import { v4 as uuid } from 'uuid';
 
@@ -29,16 +38,24 @@ export class UploadComponent implements OnDestroy {
   private auth = inject(Auth);
   private clipService = inject(ClipsService);
   private router = inject(Router);
+  public ffmpegService = inject(FfmpegService);
+
+  private uploadTaskProgress$ = new BehaviorSubject<number>(0);
+  private screenshotUploadTaskProgress$ = new BehaviorSubject<number>(0);
+  public percentage$: Observable<number>;
 
   isDragover = false;
   file: File | null = null;
-  percentage = 0;
+  isStoring: boolean = false;
   showPercentage = false;
   showAlert = false;
   alertMsg = 'Please wait! Your file is being uploaded';
   alertColor = 'blue';
   inSubmission = false;
-  uploadTask?: UploadTask;
+  clipUploadTask?: UploadTask;
+  screenshotUploadTask?: UploadTask;
+  screenshots: string[] = [];
+  selectedScreenshot = '';
 
   title = new FormControl('', {
     validators: [Validators.required, Validators.minLength(3)],
@@ -49,43 +66,97 @@ export class UploadComponent implements OnDestroy {
     title: this.title,
   });
 
+  constructor() {
+    this.ffmpegService.init();
+    this.percentage$ = combineLatest([
+      this.uploadTaskProgress$,
+      this.screenshotUploadTaskProgress$,
+    ]).pipe(
+      map(([uploadProg, screenshotProg]) => (uploadProg + screenshotProg) / 2)
+    );
+  }
+
   ngOnDestroy(): void {
     this.cancelUploadProcess();
   }
 
-  storeFile($event: Event) {
+  selectScreenshot(screenshot: string) {
+    this.selectedScreenshot = screenshot;
+  }
+
+  async storeFile($event: Event) {
+    this.isStoring = true;
     this.isDragover = false;
 
     const dragEvent = $event as DragEvent;
     const htmlInput = $event.target as HTMLInputElement;
-    this.file =
+    const tempFile =
       dragEvent.dataTransfer?.files.item(0) ?? htmlInput.files?.item(0) ?? null;
 
-    if (!this.file || this.file.type !== 'video/mp4') return;
+    if (!tempFile || tempFile.type !== 'video/mp4') {
+      return;
+    }
+
+    this.screenshots = await this.ffmpegService.getScreenshots(tempFile);
+
+    this.selectedScreenshot = this.screenshots[0];
+
+    this.file = tempFile;
+
     this.title.setValue(this.file.name.replace(/\.[^/.]+$/, ''));
+    this.isStoring = false;
   }
 
-  uploadFile() {
+  async uploadFile() {
     if (!this.file) {
       console.log('No file selected for upload.');
       return;
     }
+
     this.uploadForm.disable();
 
     this.startUploadProcess();
 
     const clipFileName = uuid();
     const clipPath = `clips/${clipFileName}.mp4`;
+    const screenshotPath = `screenshots/${clipFileName}.png`;
 
-    // Set the correct storage ref path
-    const storageRef = ref(this.storage, clipPath);
+    const screenshotBlob = await this.ffmpegService.blobFromUrl(
+      this.selectedScreenshot
+    );
 
-    this.uploadTask = uploadBytesResumable(storageRef, this.file);
+    const storageClipRef = ref(this.storage, clipPath);
+    const storageScreenshotRef = ref(this.storage, screenshotPath);
 
-    this.uploadTask.on('state_changed', {
-      next: (snapshot) => this.onUploadProgress(snapshot),
+    this.clipUploadTask = uploadBytesResumable(storageClipRef, this.file);
+
+    this.clipUploadTask.on('state_changed', {
+      next: (snapshot) => {
+        this.ngZone.run(() => {
+          const percentage = snapshot.bytesTransferred / snapshot.totalBytes;
+          console.log(percentage);
+          this.uploadTaskProgress$.next(percentage);
+        });
+      },
       error: (error) => this.onUploadError(error),
-      complete: () => this.onUploadComplete(storageRef, clipFileName),
+      complete: () =>
+        this.onUploadComplete(
+          storageClipRef,
+          storageScreenshotRef,
+          clipFileName
+        ),
+    });
+
+    this.screenshotUploadTask = uploadBytesResumable(
+      storageScreenshotRef,
+      screenshotBlob
+    );
+
+    this.screenshotUploadTask.on('state_changed', {
+      next: (snapshot) => {
+        const percentage = snapshot.bytesTransferred / snapshot.totalBytes;
+        this.screenshotUploadTaskProgress$.next(percentage);
+      },
     });
   }
 
@@ -96,13 +167,7 @@ export class UploadComponent implements OnDestroy {
   }
 
   private cancelUploadProcess() {
-    this.uploadTask?.cancel();
-  }
-
-  private onUploadProgress(snapshot: UploadTaskSnapshot) {
-    this.ngZone.run(() => {
-      this.percentage = snapshot.bytesTransferred / snapshot.totalBytes;
-    });
+    this.clipUploadTask?.cancel();
   }
 
   private onUploadError(error: StorageError) {
@@ -116,15 +181,23 @@ export class UploadComponent implements OnDestroy {
     });
   }
 
-  private onUploadComplete(storageRef: StorageReference, clipFileName: string) {
+  private onUploadComplete(
+    storageClipRef: StorageReference,
+    storageScreenshotRef: StorageReference,
+    clipFileName: string
+  ) {
     this.ngZone.run(async () => {
-      const url = await getDownloadURL(storageRef);
+      const clipUrl = await getDownloadURL(storageClipRef);
+      const screenshotUrl = await getDownloadURL(storageScreenshotRef);
+
       const clip: IClip = {
         uid: this.auth.currentUser?.uid as string,
         displayName: this.auth.currentUser?.displayName as string,
         title: this.title.value,
         fileName: `${clipFileName}.mp4`,
-        url,
+        screenshotFileName: `${clipFileName}.png`,
+        url: clipUrl,
+        screenshotUrl: screenshotUrl,
         timestamp: Timestamp.now(),
       };
 

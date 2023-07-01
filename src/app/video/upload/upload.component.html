@@ -3,51 +3,75 @@
   <div class="rounded relative flex flex-col">
     <div class="font-bold mb-6">Upload Video</div>
 
-    <ng-container *ngIf="!file; else uploadFormCtr">
-      <!-- Upload Dropbox -->
-      <div
-        app-event-blocker
-        (dragend)="isDragover = false"
-        (dragover)="isDragover = true"
-        (dragenter)="isDragover = true"
-        (dragleave)="isDragover = false"
-        (mouseleave)="isDragover = false"
-        (drop)="storeFile($event)"
-        (click)="fileInput.click()"
-        [ngClass]="{
-          'bg-indigo-400 border-indigo-400 border-solid': isDragover
-        }"
-        class="w-full px-10 py-40 rounded text-center cursor-pointer border border-dashed border-gray-400 transition duration-500 hover:text-white hover:bg-indigo-400 hover:border-indigo-400 hover:border-solid text-xl"
-      >
-        <h5>Drop your file here or click to upload (mp4 only!)</h5>
-      </div>
-      <input
-        #fileInput
-        type="file"
-        (change)="storeFile($event)"
-        class="hidden"
-      />
+    <ng-container *ngIf="!ffmpegService.isReady; else uploadEditor">
+      <span class="material-symbols-outlined text-8xl text-center animate-spin">
+        progress_activity
+      </span>
     </ng-container>
+
+    <ng-template #uploadEditor>
+      <ng-container *ngIf="!file; else uploadFormCtr">
+        <!-- Upload Dropbox -->
+        <div
+          app-event-blocker
+          app-disable-upload
+          [appDisableUpload]="isStoring"
+          [inputRef]="fileInput"
+          (dragend)="isDragover = false"
+          (dragover)="isDragover = true"
+          (dragenter)="isDragover = true"
+          (dragleave)="isDragover = false"
+          (mouseleave)="isDragover = false"
+          (drop)="storeFile($event)"
+          (click)="fileInput.click()"
+          [ngClass]="{
+            'bg-indigo-400 border-indigo-400 border-solid': isDragover
+          }"
+          class="w-full px-10 py-40 rounded text-center cursor-pointer border border-dashed border-gray-400 transition duration-500 hover:text-white hover:bg-indigo-400 hover:border-indigo-400 hover:border-solid text-xl"
+        >
+          <ng-container [ngSwitch]="isStoring">
+            <h5 *ngSwitchCase="false">
+              Drop your file here or click to upload (mp4 only!)
+            </h5>
+            <span
+              class="material-symbols-outlined text-8xl text-center animate-spin"
+              *ngSwitchCase="true"
+            >
+              progress_activity
+            </span>
+          </ng-container>
+        </div>
+
+        <input
+          #fileInput
+          type="file"
+          (change)="storeFile($event)"
+          class="hidden"
+        />
+      </ng-container>
+    </ng-template>
 
     <!-- Video Editor -->
     <ng-template #uploadFormCtr>
       <!-- Form -->
       <app-alert *ngIf="showAlert" [color]="alertColor">
         <p>{{ alertMsg }}</p>
-        <p *ngIf="showPercentage">{{ percentage | percent }}</p>
+        <p *ngIf="showPercentage">{{ percentage$ | async | percent }}</p>
       </app-alert>
       <form [formGroup]="uploadForm" (ngSubmit)="uploadFile()">
         <!-- Screenshots -->
         <h2 class="mb-4 text-xl">Select a Thumbnail</h2>
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <div class="border-8 cursor-pointer border-green-400">
-            <img src="assets/img/1.jpg" />
-          </div>
-          <div class="border-8 cursor-pointer border-transparent">
-            <img src="assets/img/2.jpg" />
-          </div>
-          <div class="border-8 cursor-pointer border-transparent">
-            <img src="assets/img/3.jpg" />
+          <div
+            *ngFor="let screenshot of screenshots"
+            [ngClass]="{
+              'border-green-400': selectedScreenshot === screenshot,
+              'border-transparent': selectedScreenshot !== screenshot
+            }"
+            (click)="selectScreenshot(screenshot)"
+            class="border-8 cursor-pointer duration-200"
+          >
+            <img [src]="screenshot | safeURL" />
           </div>
         </div>
 
